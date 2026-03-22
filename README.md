@@ -41,9 +41,9 @@ Use this before flashing AOSP or custom ROMs when:
 - moving between stock and custom builds
 
 Typical sequence:
-1. Flash abpreptools-builder output
-2. Reboot to recovery
-3. Flash ROM
+1. Flash abpreptools-builder
+2. Flash ROM
+3. Format Data
 
 ## Input Requirements
 Archive must contain valid partition images, such as:
