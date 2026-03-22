@@ -1,5 +1,3 @@
-Corrected, minimal, deterministic, no misdetection, no extension dependency, fixed 7z handling.
-
 name: Build Flashable Partition ZIP
 
 on:
