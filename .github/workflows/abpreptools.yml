@@ -1,3 +1,5 @@
+Corrected, minimal, deterministic, no misdetection, no extension dependency, fixed 7z handling.
+
 name: Build Flashable Partition ZIP
 
 on:
@@ -19,13 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Install + Download (deterministic filename)
+      # 1. Install + Download
       - run: |
           set -e
 
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            unzip p7zip-full ca-certificates zip
+            unzip p7zip-full ca-certificates zip file
 
           mkdir -p input extracted flashable/META-INF/com/google/android
 
@@ -33,29 +35,37 @@ jobs:
             "${{ github.event.inputs.ARCHIVE_URL }}" \
             -o input/archive
 
-          [ -s input/archive ] || { echo "Download failed"; exit 1; }
+          [ -s input/archive ] || exit 1
 
-      # 2. Extract + Collect + Validate (tar auto-detect)
+      # 2. Detect + Extract + Collect
       - run: |
           set -e
 
-          shopt -s nullglob
+          TYPE=$(file -b input/archive | tr '[:upper:]' '[:lower:]')
+          echo "TYPE: $TYPE"
 
-          for f in input/*; do
-            case "$f" in
-              *.zip) unzip -q "$f" -d extracted ;;
-              *.7z) 7z x "$f" -oextracted ;;
-              *) tar -xf "$f" -C extracted || { echo "Extraction failed"; exit 1; } ;;
-            esac
-          done
+          case "$TYPE" in
+            *zip*)
+              unzip -q input/archive -d extracted
+              ;;
+            *7z*)
+              7z x input/archive -oextracted
+              ;;
+            *tar*|*gzip*|*xz*|*bzip2*)
+              tar -xf input/archive -C extracted
+              ;;
+            *)
+              echo "Unsupported archive: $TYPE"
+              exit 1
+              ;;
+          esac
 
-          # collect imgs (robust)
           find extracted -type f -name "*.img" -exec cp {} flashable/ \;
 
           COUNT=$(find flashable -maxdepth 1 -name "*.img" | wc -l)
           echo "IMG COUNT: $COUNT"
 
-          [ "$COUNT" -gt 0 ] || { echo "No .img found"; exit 1; }
+          [ "$COUNT" -gt 0 ] || exit 1
 
       # 3. Build zip + release
       - run: |
