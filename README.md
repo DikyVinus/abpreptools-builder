@@ -88,3 +88,7 @@ Images must match the target device layout.
 
 ## Summary
 abpreptools-builder enforces partition consistency across A/B slots by flashing raw images directly, providing a clean and predictable base for subsequent ROM installation.
+
+## Credits
+
+- Original concept / flashing approach: Shirayuki39 — https://github.com/Shirayuki39 
