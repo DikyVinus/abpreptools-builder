@@ -41,7 +41,7 @@ Use this before flashing AOSP or custom ROMs when:
 - moving between stock and custom builds
 
 Typical sequence:
-1. Flash abpreptools-builder
+1. Flash abpreptools
 2. Flash ROM
 3. Format Data
 
