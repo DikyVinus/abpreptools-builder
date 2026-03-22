@@ -1,0 +1,102 @@
+name: Build Flashable Partition ZIP
+
+on:
+  workflow_dispatch:
+    inputs:
+      ARCHIVE_URL:
+        description: "URL to archive containing *.img partitions"
+        required: true
+      OUTPUT_NAME:
+        description: "Output zip name"
+        default: "flashable"
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions: write-all
+
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            unzip p7zip-full ca-certificates zip
+
+      - run: |
+          curl -L --fail --retry 5 --retry-delay 3 -OJ \
+            "${{ github.event.inputs.ARCHIVE_URL }}"
+          FILE=$(ls -1 | head -n1)
+          echo "FILE=$FILE" >> $GITHUB_ENV
+
+      - run: mkdir -p input extracted flashable/META-INF/com/google/android
+
+      - run: mv "$FILE" input/
+
+      - run: |
+          set -e
+          shopt -s nullglob
+          for f in input/*; do
+            case "$f" in
+              *.zip) unzip -q "$f" -d extracted ;;
+              *.7z) 7z x "$f" -oextracted ;;
+              *.tar) tar -xf "$f" -C extracted ;;
+              *.tar.gz|*.tgz) tar -xzf "$f" -C extracted ;;
+              *.tar.xz) tar -xJf "$f" -C extracted ;;
+              *) cp "$f" extracted/ ;;
+            esac
+          done
+
+      - run: |
+          shopt -s globstar nullglob
+          for img in extracted/**/*.img; do
+            cp "$img" flashable/
+          done
+
+      - run: |
+          count=$(ls flashable/*.img 2>/dev/null | wc -l)
+          [ "$count" -gt 0 ] || exit 1
+
+      - name: Generate updater-script dynamically
+        run: |
+          SCRIPT=flashable/META-INF/com/google/android/updater-script
+
+          echo 'ui_print("Starting flash...");' > "$SCRIPT"
+
+          shopt -s nullglob
+          for f in flashable/*.img; do
+            name=$(basename "$f")
+            part="${name%.img}"
+
+            echo "ui_print(\"Flashing $part...\");" >> "$SCRIPT"
+            echo "package_extract_file(\"$name\", \"/dev/block/by-name/${part}_a\");" >> "$SCRIPT"
+            echo "package_extract_file(\"$name\", \"/dev/block/by-name/${part}_b\");" >> "$SCRIPT"
+          done
+
+          echo 'run_program("/sbin/sync");' >> "$SCRIPT"
+          echo 'ui_print("Flash complete.");' >> "$SCRIPT"
+
+      - run: |
+          cp update-binary flashable/META-INF/com/google/android/update-binary
+          chmod +x flashable/META-INF/com/google/android/update-binary
+
+      - run: |
+          cd flashable
+          zip -r9 -Z deflate "../${{ github.event.inputs.OUTPUT_NAME }}.zip" .
+
+      - run: |
+          sha256sum "${{ github.event.inputs.OUTPUT_NAME }}.zip" > sha256.txt
+
+      - uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.run_id }}
+          name: flashable-${{ github.run_id }}
+          files: |
+            ${{ github.event.inputs.OUTPUT_NAME }}.zip
+            sha256.txt
