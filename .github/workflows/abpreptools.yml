@@ -30,7 +30,6 @@ jobs:
       - run: |
           curl -L --fail --retry 5 --retry-delay 3 -OJ \
             "${{ github.event.inputs.ARCHIVE_URL }}"
-          FILE=$(ls -1 | head -n1)
           echo "FILE=$FILE" >> $GITHUB_ENV
 
       - run: mkdir -p input extracted flashable/META-INF/com/google/android
