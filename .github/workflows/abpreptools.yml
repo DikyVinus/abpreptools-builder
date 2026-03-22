@@ -16,54 +16,55 @@ jobs:
     runs-on: ubuntu-latest
     permissions: write-all
 
-    env:
-      DEBIAN_FRONTEND: noninteractive
-
     steps:
       - uses: actions/checkout@v4
 
+      # 1. Install + Download (deterministic filename)
       - run: |
+          set -e
+
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             unzip p7zip-full ca-certificates zip
 
-      - run: |
-          curl -L --fail --retry 5 --retry-delay 3 -OJ \
-            "${{ github.event.inputs.ARCHIVE_URL }}"
+          mkdir -p input extracted flashable/META-INF/com/google/android
 
-      - run: mkdir -p input extracted flashable/META-INF/com/google/android
+          curl -L --fail --retry 5 --retry-delay 3 \
+            "${{ github.event.inputs.ARCHIVE_URL }}" \
+            -o input/archive
 
+          [ -s input/archive ] || { echo "Download failed"; exit 1; }
+
+      # 2. Extract + Collect + Validate (tar auto-detect)
       - run: |
           set -e
+
           shopt -s nullglob
+
           for f in input/*; do
             case "$f" in
               *.zip) unzip -q "$f" -d extracted ;;
               *.7z) 7z x "$f" -oextracted ;;
-              *.tar) tar -xf "$f" -C extracted ;;
-              *.tar.gz|*.tgz) tar -xzf "$f" -C extracted ;;
-              *.tar.xz) tar -xJf "$f" -C extracted ;;
-              *) cp "$f" extracted/ ;;
+              *) tar -xf "$f" -C extracted || { echo "Extraction failed"; exit 1; } ;;
             esac
           done
 
-      - run: |
-          shopt -s globstar nullglob
-          for img in extracted/**/*.img; do
-            cp "$img" flashable/
-          done
+          # collect imgs (robust)
+          find extracted -type f -name "*.img" -exec cp {} flashable/ \;
 
-      - run: |
-          count=$(ls flashable/*.img 2>/dev/null | wc -l)
-          [ "$count" -gt 0 ] || exit 1
+          COUNT=$(find flashable -maxdepth 1 -name "*.img" | wc -l)
+          echo "IMG COUNT: $COUNT"
 
-      - name: Generate updater-script dynamically
-        run: |
+          [ "$COUNT" -gt 0 ] || { echo "No .img found"; exit 1; }
+
+      # 3. Build zip + release
+      - run: |
+          set -e
+
           SCRIPT=flashable/META-INF/com/google/android/updater-script
 
           echo 'ui_print("Starting flash...");' > "$SCRIPT"
 
-          shopt -s nullglob
           for f in flashable/*.img; do
             name=$(basename "$f")
             part="${name%.img}"
@@ -76,15 +77,13 @@ jobs:
           echo 'run_program("/sbin/sync");' >> "$SCRIPT"
           echo 'ui_print("Flash complete.");' >> "$SCRIPT"
 
-      - run: |
           cp update-binary flashable/META-INF/com/google/android/update-binary
           chmod +x flashable/META-INF/com/google/android/update-binary
 
-      - run: |
           cd flashable
           zip -r9 -Z deflate "../${{ github.event.inputs.OUTPUT_NAME }}.zip" .
+          cd ..
 
-      - run: |
           sha256sum "${{ github.event.inputs.OUTPUT_NAME }}.zip" > sha256.txt
 
       - uses: softprops/action-gh-release@v2
